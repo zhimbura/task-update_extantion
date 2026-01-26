@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Icon Generator</title>
+</head>
+<body>
+    <h2>Генератор иконок для расширения</h2>
+    <p>Откройте консоль разработчика (F12) и выполните код ниже для создания иконок:</p>
+    <pre>
+// Создание простых иконок
+function createIcon(size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    
+    // Фон
+    ctx.fillStyle = '#4285f4';
+    ctx.fillRect(0, 0, size, size);
+    
+    // Текст "YT"
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${size * 0.4}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('YT', size / 2, size / 2);
+    
+    return canvas;
+}
+
+// Создание и скачивание иконок
+[16, 48, 128].forEach(size => {
+    const canvas = createIcon(size);
+    canvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `icon${size}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+});
+    </pre>
+    <button onclick="generateIcons()">Создать иконки</button>
+    
+    <script>
+    function createIcon(size) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Фон с градиентом
+        const gradient = ctx.createLinearGradient(0, 0, size, size);
+        gradient.addColorStop(0, '#4285f4');
+        gradient.addColorStop(1, '#357ae8');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+        
+        // Текст "YT"
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.floor(size * 0.4)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('YT', size / 2, size / 2);
+        
+        return canvas;
+    }
+    
+    function generateIcons() {
+        [16, 48, 128].forEach(size => {
+            const canvas = createIcon(size);
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `icon${size}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        });
+        alert('Иконки созданы! Проверьте папку загрузок.');
+    }
+    </script>
+</body>
+</html>

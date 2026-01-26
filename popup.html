@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTrack Status Updater</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div id="statusMessage" class="message"></div>
+        
+        <div class="header-with-settings">
+            <h2>YouTrack Status Updater</h2>
+            <button id="settingsButton" class="settings-button" title="Настройки">⚙️</button>
+        </div>
+        
+        <!-- Основной раздел -->
+        <div id="mainView" class="view-section">
+            <div class="section">
+                <label for="taskList">Список задач (по одной на строку или через запятую):</label>
+                <textarea id="taskList" rows="8" placeholder="Вставьте список задач, например:&#10;ITSFT-123&#10;ITSFT-456&#10;ITSFT-789&#10;&#10;Или через запятую: ITSFT-123, ITSFT-456, ITSFT-789"></textarea>
+            </div>
+
+            <div class="button-group">
+                <button id="loadStatuses" class="btn btn-success">Получить статусы</button>
+                <button id="clearData" class="btn btn-danger">Очистить</button>
+            </div>
+            <div id="autoSaveIndicator" class="auto-save-indicator" style="display: none;">
+                <span>✓ Настройки сохранены автоматически</span>
+            </div>
+        </div>
+
+        <!-- Раздел настроек -->
+        <div id="settingsView" class="view-section" style="display: none;">
+            <h3>Настройки подключения</h3>
+            
+            <div class="section">
+                <label for="youtrackHost">YouTrack Host:</label>
+                <input type="text" id="youtrackHost" placeholder="https://youtrack.wildberries.ru">
+            </div>
+
+            <div class="section">
+                <label for="youtrackToken">YouTrack Token:</label>
+                <input type="password" id="youtrackToken" placeholder="Введите токен">
+            </div>
+
+            <div class="button-group">
+                <button id="saveSettings" class="btn btn-primary">Сохранить настройки</button>
+                <button id="backToMain" class="btn btn-secondary">Назад</button>
+            </div>
+            <div id="autoSaveIndicatorSettings" class="auto-save-indicator" style="display: none;">
+                <span>✓ Настройки сохранены автоматически</span>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="results-section" style="display: none;">
+            <div class="results-header">
+                <h3>Результаты:</h3>
+                <div class="results-buttons">
+                    <button id="copyStatuses" class="btn btn-primary btn-small">📋 Копировать статусы</button>
+                    <button id="copyResults" class="btn btn-primary btn-small">📋 Копировать таблицу</button>
+                </div>
+            </div>
+            <div id="resultsTableContainer" class="results-table-container">
+                <table id="resultsTable" class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Статус</th>
+                            <th>Задача</th>
+                            <th>Описание</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="button-group" style="margin-top: 15px;">
+            <button id="toggleLogs" class="btn btn-small btn-secondary">Показать логи</button>
+        </div>
+
+        <div id="logsSection" class="logs-section" style="display: none;">
+            <div class="logs-header">
+                <h3>Логи и ошибки</h3>
+                <div class="logs-controls">
+                    <button id="hideLogs" class="btn btn-small">Скрыть логи</button>
+                    <button id="clearLogs" class="btn btn-small btn-secondary">Очистить</button>
+                    <button id="copyLogs" class="btn btn-small btn-secondary">Копировать</button>
+                    <button id="saveLogs" class="btn btn-small btn-secondary">💾 Сохранить в файл</button>
+                </div>
+            </div>
+            <div id="logsContainer" class="logs-container">
+                <div id="logsContent" class="logs-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
