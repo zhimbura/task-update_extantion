@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTrack Status Updater</title>
+    <title>YT Status Tools</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
         <div id="statusMessage" class="message"></div>
         
         <div class="header-with-settings">
-            <h2>YouTrack Status Updater</h2>
+            <h2>YT Status Tools</h2>
             <button id="settingsButton" class="settings-button" title="Настройки">⚙️</button>
         </div>
         
@@ -37,7 +37,7 @@
             
             <div class="section">
                 <label for="youtrackHost">YouTrack Host:</label>
-                <input type="text" id="youtrackHost" placeholder="https://youtrack.wildberries.ru">
+                <input type="text" id="youtrackHost" placeholder="https://your-company.youtrack.cloud">
             </div>
 
             <div class="section">
@@ -45,7 +45,12 @@
                 <input type="password" id="youtrackToken" placeholder="Введите токен">
             </div>
 
-            <div class="button-group">
+            <h3 style="margin-top: 20px;">Колонки таблицы результатов</h3>
+            <p class="hint">Укажите поля YouTrack для колонок. Доступны: <code>id</code> (номер задачи), <code>summary</code> (описание), либо имя кастомного поля (например Stage3, State, Assignee).</p>
+            <div id="tableColumnsList" class="table-columns-list"></div>
+            <button type="button" id="addTableColumn" class="btn btn-secondary btn-small" style="margin-top: 8px;">+ Добавить колонку</button>
+
+            <div class="button-group" style="margin-top: 20px;">
                 <button id="saveSettings" class="btn btn-primary">Сохранить настройки</button>
                 <button id="backToMain" class="btn btn-secondary">Назад</button>
             </div>
@@ -64,12 +69,8 @@
             </div>
             <div id="resultsTableContainer" class="results-table-container">
                 <table id="resultsTable" class="results-table">
-                    <thead>
-                        <tr>
-                            <th>Статус</th>
-                            <th>Задача</th>
-                            <th>Описание</th>
-                        </tr>
+                    <thead id="resultsTableHead">
+                        <tr></tr>
                     </thead>
                     <tbody id="resultsTableBody"></tbody>
                 </table>

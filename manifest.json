@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YouTrack Task Status Updater",
+  "name": "YouTrack Status Tools",
   "version": "1.0.0",
   "description": "Получение статусов задач из YouTrack API",
   "permissions": [

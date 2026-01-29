@@ -1,3 +1,10 @@
+// Колонки таблицы по умолчанию (поля YT)
+const DEFAULT_TABLE_COLUMNS = [
+    { id: 'Stage3', label: 'Статус' },
+    { id: 'id', label: 'Задача' },
+    { id: 'summary', label: 'Описание' }
+];
+
 // Система логирования
 let logs = [];
 
@@ -70,7 +77,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'youtrackHost',
         'youtrackToken',
         'taskList',
-        'resultsData'
+        'resultsData',
+        'tableColumns'
     ]);
 
     if (settings.youtrackHost) {
@@ -82,8 +90,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (settings.taskList) {
         document.getElementById('taskList').value = settings.taskList;
     }
+    const tableColumns = Array.isArray(settings.tableColumns) && settings.tableColumns.length > 0
+        ? settings.tableColumns
+        : DEFAULT_TABLE_COLUMNS;
+    renderTableColumnsList(tableColumns);
+
     if (settings.resultsData && settings.resultsData.length > 0) {
-        displayResults(settings.resultsData);
+        displayResults(settings.resultsData, tableColumns);
         document.getElementById('resultsSection').style.display = 'block';
     }
     
@@ -194,10 +207,78 @@ async function restoreScrollPosition() {
     }
 }
 
+// Рендер списка колонок в настройках
+function renderTableColumnsList(columns) {
+    const container = document.getElementById('tableColumnsList');
+    if (!container) return;
+    container.innerHTML = '';
+    (columns || DEFAULT_TABLE_COLUMNS).forEach((col, index) => {
+        const row = document.createElement('div');
+        row.className = 'column-row';
+        row.innerHTML = `
+            <input type="text" class="col-field" data-index="${index}" placeholder="Поле (id, summary, Stage3...)" value="${escapeHtml(col.id)}" title="Поле YouTrack: id, summary или имя кастомного поля">
+            <input type="text" class="col-label" data-index="${index}" placeholder="Подпись колонки" value="${escapeHtml(col.label)}">
+            <button type="button" class="btn-remove-col" data-index="${index}" title="Удалить колонку">✕</button>
+        `;
+        container.appendChild(row);
+    });
+    // Обработчики
+    container.querySelectorAll('.col-field, .col-label').forEach(input => {
+        input.addEventListener('input', () => syncTableColumnsFromDOM());
+    });
+    container.querySelectorAll('.btn-remove-col').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const index = parseInt(btn.getAttribute('data-index'), 10);
+            const cols = getTableColumnsFromDOM();
+            if (cols.length <= 1) return;
+            cols.splice(index, 1);
+            saveTableColumns(cols);
+            renderTableColumnsList(cols);
+        });
+    });
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function getTableColumnsFromDOM() {
+    const rows = document.querySelectorAll('#tableColumnsList .column-row');
+    const cols = [];
+    rows.forEach(row => {
+        const fieldInput = row.querySelector('.col-field');
+        const labelInput = row.querySelector('.col-label');
+        if (fieldInput && labelInput) {
+            const id = (fieldInput.value || '').trim() || 'Field';
+            cols.push({ id, label: (labelInput.value || '').trim() || id });
+        }
+    });
+    return cols.length > 0 ? cols : DEFAULT_TABLE_COLUMNS;
+}
+
+function syncTableColumnsFromDOM() {
+    const cols = getTableColumnsFromDOM();
+    saveTableColumns(cols);
+}
+
+async function saveTableColumns(columns) {
+    await chrome.storage.local.set({ tableColumns: columns });
+}
+
+// Получить текущие колонки из storage (для использования при загрузке статусов и отображении)
+async function getTableColumns() {
+    const st = await chrome.storage.local.get(['tableColumns']);
+    return Array.isArray(st.tableColumns) && st.tableColumns.length > 0 ? st.tableColumns : DEFAULT_TABLE_COLUMNS;
+}
+
 // Переключение на раздел настроек
 function showSettingsView() {
     document.getElementById('mainView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'block';
+    getTableColumns().then(renderTableColumnsList);
 }
 
 // Переключение на основной раздел
@@ -233,34 +314,36 @@ async function saveResults(results) {
     }
 }
 
-// Получение текущих результатов из таблицы
+// Получение текущих результатов из таблицы по колонкам
 function getCurrentResults() {
     const tableBody = document.getElementById('resultsTableBody');
-    if (!tableBody) return [];
-    
-    const rows = tableBody.querySelectorAll('tr');
+    const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
+    if (!tableBody || !theadRow) return [];
+
     const results = [];
-    
-    rows.forEach((row, index) => {
+    tableBody.querySelectorAll('tr').forEach((row) => {
         const taskId = row.getAttribute('data-task-id');
-        const statusCell = row.querySelector('td.status');
-        const summaryCell = row.querySelector('td.summary');
-        
-        if (taskId && statusCell) {
-            const statusText = statusCell.textContent.trim();
-            const summaryText = summaryCell ? summaryCell.textContent.trim() : '';
-            
-            results.push({
-                taskId: taskId,
-                status: statusText === 'Загрузка...' ? 'Загрузка...' : (statusText === 'Ошибка' ? 'Ошибка' : statusText),
-                summary: summaryText,
-                isLoading: statusText === 'Загрузка...',
-                hasError: statusText === 'Ошибка',
-                error: statusText === 'Ошибка' ? new Error(summaryText) : null
-            });
-        }
+        if (!taskId) return;
+        const cells = row.querySelectorAll('td');
+        const item = { taskId };
+        let hasError = false;
+        let errorSummary = '';
+        cells.forEach((cell, i) => {
+            const colId = cell.getAttribute('data-col-id');
+            if (!colId) return;
+            const retryBtn = cell.querySelector('.btn-small');
+            if (retryBtn) {
+                hasError = true;
+                const span = cell.querySelector('span');
+                errorSummary = span ? span.textContent.trim() : cell.textContent.trim();
+            }
+            item[colId] = cell.textContent.trim().replace(/\s*Повторить\s*$/, '').trim();
+        });
+        item.isLoading = (cells[0] && cells[0].textContent.trim() === 'Загрузка...');
+        item.hasError = hasError || (cells[0] && cells[0].textContent.trim() === 'Ошибка');
+        item.error = item.hasError ? new Error(errorSummary || '') : null;
+        results.push(item);
     });
-    
     return results;
 }
 
@@ -364,6 +447,13 @@ document.getElementById('youtrackToken').addEventListener('input', () => {
 });
 document.getElementById('taskList').addEventListener('input', () => autoSave());
 
+document.getElementById('addTableColumn').addEventListener('click', () => {
+    const cols = getTableColumnsFromDOM();
+    cols.push({ id: 'Field', label: 'Новая колонка' });
+    saveTableColumns(cols);
+    renderTableColumnsList(cols);
+});
+
 // Кнопка очистки данных
 document.getElementById('clearData').addEventListener('click', async () => {
     await clearData();
@@ -427,79 +517,49 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
         return;
     }
 
-    showMessage(`Загрузка статусов для ${tasks.length} задач...`, 'info');
+    const tableColumns = await getTableColumns();
+    showMessage(`Загрузка полей для ${tasks.length} задач...`, 'info');
     document.getElementById('loadStatuses').disabled = true;
 
-    // Создаем начальные результаты со статусом "Загрузка..."
-    const results = tasks.map(taskId => ({
-        taskId: taskId,
-        status: 'Загрузка...',
-        summary: '',
-        isLoading: true,
-        hasError: false,
-        error: null
-    }));
+    // Начальные результаты: по одной ячейке "Загрузка..." на каждую колонку
+    const results = tasks.map(taskId => {
+        const row = { taskId, isLoading: true, hasError: false, error: null };
+        tableColumns.forEach(col => { row[col.id] = 'Загрузка...'; });
+        return row;
+    });
 
-    // Строим таблицу сразу
-        displayResults(results);
-        document.getElementById('resultsSection').style.display = 'block';
+    displayResults(results, tableColumns);
+    document.getElementById('resultsSection').style.display = 'block';
 
-    // Загружаем статусы асинхронно и обновляем таблицу по мере получения
     let completedCount = 0;
     const updatePromises = tasks.map(async (taskId, index) => {
         try {
-            addLog(`Запрос статуса для ${taskId}...`, 'info');
+            addLog(`Запрос данных для ${taskId}...`, 'info');
             const taskData = await fetchTaskStatus(taskId, settings.youtrackHost, settings.youtrackToken);
-            addLog(`${taskId}: ${taskData.status}`, 'success');
-            
-            // Обновляем результат
-            results[index] = {
-                taskId: taskId,
-                status: taskData.status,
-                summary: taskData.summary,
-                isLoading: false,
-                hasError: false,
-                error: null
-            };
-            
-            // Обновляем таблицу
-            updateTableRow(index, results[index]);
+            const row = apiResponseToRow(taskId, taskData, tableColumns);
+            results[index] = { ...row, isLoading: false, hasError: false, error: null };
+            addLog(`${taskId}: получены поля`, 'success');
+            updateTableRow(index, results[index], tableColumns);
             completedCount++;
-            
-            // Сохраняем результаты после каждого обновления
             await saveResults(results);
-            
             if (completedCount === tasks.length) {
-                showMessage(`Загружено ${completedCount} статусов`, 'success');
+                showMessage(`Загружено ${completedCount} задач`, 'success');
                 document.getElementById('loadStatuses').disabled = false;
             }
         } catch (error) {
-            addLog(`Ошибка для ${taskId}: ${error.message}`, 'error', {
-                taskId: taskId,
-                error: error.toString()
+            addLog(`Ошибка для ${taskId}: ${error.message}`, 'error', { taskId, error: error.toString() });
+            const row = { taskId };
+            tableColumns.forEach(col => {
+                row[col.id] = col.id === 'summary' ? error.message.substring(0, 50) : (col.id === 'id' ? taskId : 'Ошибка');
             });
-            
-            // Обновляем результат с ошибкой
-            results[index] = {
-                taskId: taskId,
-                status: 'Ошибка',
-                summary: error.message.substring(0, 50),
-                isLoading: false,
-                hasError: true,
-                error: error
-            };
-            
-            // Обновляем таблицу
-            updateTableRow(index, results[index]);
+            results[index] = { ...row, isLoading: false, hasError: true, error };
+            updateTableRow(index, results[index], tableColumns);
             completedCount++;
-            
-            // Сохраняем результаты после каждого обновления
             await saveResults(results);
-            
             if (completedCount === tasks.length) {
                 const errorCount = results.filter(r => r.hasError).length;
                 const successCount = completedCount - errorCount;
-                showMessage(`Загружено ${successCount} из ${completedCount} статусов. Ошибок: ${errorCount}`, errorCount > 0 ? 'warning' : 'success');
+                showMessage(`Загружено ${successCount} из ${completedCount}. Ошибок: ${errorCount}`, errorCount > 0 ? 'warning' : 'success');
                 document.getElementById('loadStatuses').disabled = false;
             }
         }
@@ -509,9 +569,10 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
     await Promise.all(updatePromises);
 });
 
-// Запрос статуса и описания задачи из YouTrack API
+// Запрос полей задачи из YouTrack API (id, summary, все customFields по имени)
 async function fetchTaskStatus(taskId, host, token) {
-    const url = `${host}/api/issues/${taskId}?fields=summary,customFields(name,value(name))`;
+    const baseHost = (host || '').trim().replace(/\/+$/, '');
+    const url = `${baseHost}/api/issues/${taskId}?fields=id,summary,customFields(name,value(name))`;
     
     addLog(`Запрос к API: ${url}`, 'info');
     
@@ -564,210 +625,178 @@ async function fetchTaskStatus(taskId, host, token) {
         throw new Error(`Ошибка парсинга ответа: ${error.message}`);
     }
 
-    // Получаем описание (summary)
     const summary = json.summary || 'Нет описания';
-
-    // Ищем статус: сначала "Stage3", если нет - то "Stage"
-    let status = 'Unknown';
-    if (json.customFields) {
-        addLog(`Найдено ${json.customFields.length} customFields для ${taskId}`, 'info');
-        for (let i = 0; i < json.customFields.length; i++) {
-            if (json.customFields[i].name === 'Stage3' && 
-                json.customFields[i].value && 
-                json.customFields[i].value.name) {
-                status = json.customFields[i].value.name;
-                addLog(`Найден Stage3 для ${taskId}: ${status}`, 'success');
-                break;
-            }
-        }
-        
-        if (status === 'Unknown') {
-            for (let i = 0; i < json.customFields.length; i++) {
-                if (json.customFields[i].name === 'Stage' && 
-                    json.customFields[i].value && 
-                    json.customFields[i].value.name) {
-                    status = json.customFields[i].value.name;
-                    addLog(`Найден Stage для ${taskId}: ${status}`, 'success');
-                    break;
-                }
-            }
-        }
-        
-        if (status === 'Unknown') {
-            addLog(`Статус не найден для ${taskId}. Доступные поля: ${json.customFields.map(f => f.name).join(', ')}`, 'warning', {
-                taskId,
-                availableFields: json.customFields.map(f => f.name)
-            });
-        }
-    } else {
-        addLog(`Нет customFields в ответе для ${taskId}`, 'warning', { taskId, json });
+    const customFields = {};
+    if (Array.isArray(json.customFields)) {
+        json.customFields.forEach(f => {
+            if (f.name && f.value && f.value.name) customFields[f.name] = f.value.name;
+        });
     }
+    return {
+        id: json.id || taskId,
+        summary,
+        customFields
+    };
+}
 
-    return { status, summary };
+// Преобразовать ответ API в объект строки по колонкам
+function apiResponseToRow(taskId, apiData, columns) {
+    const row = { taskId };
+    columns.forEach(col => {
+        if (col.id === 'id') row[col.id] = apiData.id || taskId;
+        else if (col.id === 'summary') row[col.id] = apiData.summary || '';
+        else row[col.id] = (apiData.customFields && apiData.customFields[col.id]) || '';
+    });
+    return row;
+}
+
+// Нормализация старых результатов (status/summary) в формат по колонкам
+function normalizeResultForColumns(item, columns) {
+    const out = { taskId: item.taskId, isLoading: item.isLoading, hasError: item.hasError, error: item.error };
+    columns.forEach(col => {
+        if (item[col.id] !== undefined) out[col.id] = item[col.id];
+        else if (col.id === 'Stage3' && item.status !== undefined) out[col.id] = item.status;
+        else if (col.id === 'summary') out[col.id] = item.summary != null ? item.summary : '';
+        else if (col.id === 'id') out[col.id] = item.taskId || '';
+        else out[col.id] = '';
+    });
+    return out;
 }
 
 // Отображение результатов в таблице
-function displayResults(results) {
+function displayResults(results, columnsArg) {
+    const tableColumns = columnsArg || DEFAULT_TABLE_COLUMNS;
+    const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
+    const tableBody = document.getElementById('resultsTableBody');
+    if (!theadRow || !tableBody) return;
+
+    theadRow.innerHTML = '';
+    tableColumns.forEach((col, colIndex) => {
+        const th = document.createElement('th');
+        const wrap = document.createElement('span');
+        wrap.className = 'th-wrap';
+        wrap.innerHTML = `<span>${escapeHtml(col.label)}</span><button type="button" class="btn-copy-col" data-col-index="${colIndex}" title="Копировать столбец">📋</button>`;
+        th.appendChild(wrap);
+        theadRow.appendChild(th);
+    });
+    theadRow.querySelectorAll('.btn-copy-col').forEach(btn => {
+        btn.addEventListener('click', () => copyColumnToClipboard(parseInt(btn.getAttribute('data-col-index'), 10)));
+    });
+
+    tableBody.innerHTML = '';
+    results.forEach((item, index) => {
+        const normalized = normalizeResultForColumns(item, tableColumns);
+        createTableRow(tableBody, normalized, index, tableColumns);
+    });
+
+    const resultsSection = document.getElementById('resultsSection');
+    if (resultsSection && results.length > 0) resultsSection.style.display = 'block';
+}
+
+async function copyColumnToClipboard(colIndex) {
     const tableBody = document.getElementById('resultsTableBody');
     if (!tableBody) return;
-    
-    tableBody.innerHTML = '';
-
-    results.forEach((item, index) => {
-        createTableRow(tableBody, item, index);
+    const rows = tableBody.querySelectorAll('tr');
+    const values = [];
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells[colIndex]) values.push(cells[colIndex].textContent.trim());
     });
-    
-    // Показываем секцию результатов
-    const resultsSection = document.getElementById('resultsSection');
-    if (resultsSection && results.length > 0) {
-        resultsSection.style.display = 'block';
+    const text = values.join('\n');
+    try {
+        await navigator.clipboard.writeText(text);
+        showMessage(`Скопировано ${values.length} значений из столбца`, 'success');
+    } catch (e) {
+        showMessage('Ошибка при копировании', 'error');
     }
 }
 
-// Создание строки таблицы
-function createTableRow(tableBody, item, index) {
+// Создание строки таблицы по колонкам
+function createTableRow(tableBody, item, index, tableColumns) {
     const row = document.createElement('tr');
     row.setAttribute('data-index', index);
     row.setAttribute('data-task-id', item.taskId);
-    
-    // Статус (первая колонка)
-    const statusCell = document.createElement('td');
-    statusCell.className = 'status';
-    
-    if (item.isLoading) {
-        statusCell.textContent = 'Загрузка...';
-        statusCell.style.color = '#666';
-        statusCell.style.fontStyle = 'italic';
-    } else if (item.hasError) {
-        statusCell.innerHTML = `<span style="color: #dc3545;">Ошибка</span>`;
-        statusCell.style.cursor = 'default';
-    } else {
-        statusCell.textContent = item.status;
-        statusCell.style.cursor = 'pointer';
-        statusCell.title = 'Кликните, чтобы скопировать статус';
-        statusCell.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(item.status);
-                showMessage(`Статус "${item.status}" скопирован!`, 'success');
-                statusCell.style.backgroundColor = '#d4edda';
-                setTimeout(() => {
-                    statusCell.style.backgroundColor = '';
-                }, 300);
-            } catch (error) {
-                showMessage('Ошибка при копировании статуса', 'error');
-                addLog('Ошибка при копировании статуса: ' + error.message, 'error', error);
+
+    tableColumns.forEach((col, colIndex) => {
+        const td = document.createElement('td');
+        td.className = col.id === 'id' ? 'task-id' : col.id === 'summary' ? 'summary' : 'col-' + col.id;
+        td.setAttribute('data-col-id', col.id);
+
+        if (item.hasError && col.id === 'summary') {
+            const errorText = document.createElement('span');
+            errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
+            errorText.style.color = '#dc3545';
+            const retryButton = document.createElement('button');
+            retryButton.className = 'btn btn-small btn-secondary';
+            retryButton.textContent = '🔄 Повторить';
+            retryButton.style.marginLeft = '10px';
+            retryButton.style.padding = '2px 8px';
+            retryButton.style.fontSize = '11px';
+            retryButton.addEventListener('click', async () => { await retryTaskStatus(item.taskId, index); });
+            td.appendChild(errorText);
+            td.appendChild(retryButton);
+        } else {
+            let val = item[col.id];
+            if (item.isLoading && val !== 'Загрузка...') val = 'Загрузка...';
+            td.textContent = val != null ? String(val) : '';
+            if (item.isLoading) {
+                td.style.color = '#666';
+                td.style.fontStyle = 'italic';
             }
-        });
-    }
-    
-    // Задача (вторая колонка)
-    const taskCell = document.createElement('td');
-    taskCell.className = 'task-id';
-    taskCell.textContent = item.taskId;
-    
-    // Описание (третья колонка)
-    const summaryCell = document.createElement('td');
-    summaryCell.className = 'summary';
-    
-    if (item.hasError) {
-        const errorText = document.createElement('span');
-        errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
-        errorText.style.color = '#dc3545';
-        
-        const retryButton = document.createElement('button');
-        retryButton.className = 'btn btn-small btn-secondary';
-        retryButton.textContent = '🔄 Повторить';
-        retryButton.style.marginLeft = '10px';
-        retryButton.style.padding = '2px 8px';
-        retryButton.style.fontSize = '11px';
-        retryButton.addEventListener('click', async () => {
-            await retryTaskStatus(item.taskId, index);
-        });
-        
-        summaryCell.appendChild(errorText);
-        summaryCell.appendChild(retryButton);
-    } else {
-        summaryCell.textContent = item.summary || (item.isLoading ? '' : 'Нет описания');
-    }
-    
-    row.appendChild(statusCell);
-    row.appendChild(taskCell);
-    row.appendChild(summaryCell);
+            if (item.hasError && col.id !== 'summary' && col.id !== 'id') {
+                td.innerHTML = '<span style="color: #dc3545;">Ошибка</span>';
+            }
+        }
+        row.appendChild(td);
+    });
     tableBody.appendChild(row);
 }
 
-// Обновление строки таблицы
-function updateTableRow(index, item) {
+// Обновление строки таблицы по колонкам
+function updateTableRow(index, item, tableColumns) {
     const tableBody = document.getElementById('resultsTableBody');
-    const row = tableBody.querySelector(`tr[data-index="${index}"]`);
+    const row = tableBody?.querySelector(`tr[data-index="${index}"]`);
     if (!row) return;
-    
-    // Обновляем статус
-    const statusCell = row.querySelector('td.status');
-    if (item.isLoading) {
-        statusCell.textContent = 'Загрузка...';
-        statusCell.style.color = '#666';
-        statusCell.style.fontStyle = 'italic';
-        statusCell.style.cursor = 'default';
-        statusCell.title = '';
-    } else if (item.hasError) {
-        statusCell.innerHTML = `<span style="color: #dc3545;">Ошибка</span>`;
-        statusCell.style.cursor = 'default';
-        statusCell.title = '';
-    } else {
-        statusCell.textContent = item.status;
-        statusCell.style.color = '';
-        statusCell.style.fontStyle = '';
-        statusCell.style.cursor = 'pointer';
-        statusCell.title = 'Кликните, чтобы скопировать статус';
-        // Удаляем старые обработчики и добавляем новый
-        statusCell.replaceWith(statusCell.cloneNode(true));
-        const newStatusCell = row.querySelector('td.status');
-        newStatusCell.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(item.status);
-                showMessage(`Статус "${item.status}" скопирован!`, 'success');
-                newStatusCell.style.backgroundColor = '#d4edda';
-                setTimeout(() => {
-                    newStatusCell.style.backgroundColor = '';
-                }, 300);
-            } catch (error) {
-                showMessage('Ошибка при копировании статуса', 'error');
-                addLog('Ошибка при копировании статуса: ' + error.message, 'error', error);
+
+    const cells = row.querySelectorAll('td');
+    tableColumns.forEach((col, colIndex) => {
+        const td = cells[colIndex];
+        if (!td) return;
+        td.innerHTML = '';
+        td.style = '';
+        if (item.hasError && col.id === 'summary') {
+            const errorText = document.createElement('span');
+            errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
+            errorText.style.color = '#dc3545';
+            const retryButton = document.createElement('button');
+            retryButton.className = 'btn btn-small btn-secondary';
+            retryButton.textContent = '🔄 Повторить';
+            retryButton.style.marginLeft = '10px';
+            retryButton.style.padding = '2px 8px';
+            retryButton.style.fontSize = '11px';
+            retryButton.addEventListener('click', async () => { await retryTaskStatus(item.taskId, index); });
+            td.appendChild(errorText);
+            td.appendChild(retryButton);
+        } else {
+            let val = item[col.id];
+            if (item.isLoading) val = 'Загрузка...';
+            td.textContent = val != null ? String(val) : '';
+            if (item.isLoading) {
+                td.style.color = '#666';
+                td.style.fontStyle = 'italic';
             }
-        });
-    }
-    
-    // Обновляем описание
-    const summaryCell = row.querySelector('td.summary');
-    summaryCell.innerHTML = '';
-    if (item.hasError) {
-        const errorText = document.createElement('span');
-        errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
-        errorText.style.color = '#dc3545';
-        
-        const retryButton = document.createElement('button');
-        retryButton.className = 'btn btn-small btn-secondary';
-        retryButton.textContent = '🔄 Повторить';
-        retryButton.style.marginLeft = '10px';
-        retryButton.style.padding = '2px 8px';
-        retryButton.style.fontSize = '11px';
-        retryButton.addEventListener('click', async () => {
-            await retryTaskStatus(item.taskId, index);
-        });
-        
-        summaryCell.appendChild(errorText);
-        summaryCell.appendChild(retryButton);
-    } else {
-        summaryCell.textContent = item.summary || 'Нет описания';
-    }
+            if (item.hasError && col.id !== 'summary' && col.id !== 'id') {
+                td.innerHTML = '<span style="color: #dc3545;">Ошибка</span>';
+            }
+        }
+    });
 }
 
-// Повторный запрос статуса задачи
+// Повторный запрос данных задачи
 async function retryTaskStatus(taskId, index) {
-    const settings = await chrome.storage.local.get([
-        'youtrackHost',
-        'youtrackToken'
+    const [settings, tableColumns] = await Promise.all([
+        chrome.storage.local.get(['youtrackHost', 'youtrackToken']),
+        getTableColumns()
     ]);
 
     if (!settings.youtrackHost || !settings.youtrackToken) {
@@ -775,137 +804,71 @@ async function retryTaskStatus(taskId, index) {
         return;
     }
 
-    // Обновляем строку на "Загрузка..."
     const tableBody = document.getElementById('resultsTableBody');
-    const row = tableBody.querySelector(`tr[data-index="${index}"]`);
+    const row = tableBody?.querySelector(`tr[data-index="${index}"]`);
     if (row) {
-        const statusCell = row.querySelector('td.status');
-        statusCell.textContent = 'Загрузка...';
-        statusCell.style.color = '#666';
-        statusCell.style.fontStyle = 'italic';
-        
-        const summaryCell = row.querySelector('td.summary');
-        summaryCell.textContent = '';
+        row.querySelectorAll('td').forEach(td => {
+            td.textContent = 'Загрузка...';
+            td.style.color = '#666';
+            td.style.fontStyle = 'italic';
+            td.innerHTML = '';
+        });
     }
 
     try {
-        addLog(`Повторный запрос статуса для ${taskId}...`, 'info');
+        addLog(`Повторный запрос для ${taskId}...`, 'info');
         const taskData = await fetchTaskStatus(taskId, settings.youtrackHost, settings.youtrackToken);
-        addLog(`${taskId}: ${taskData.status}`, 'success');
-        
-        const result = {
-            taskId: taskId,
-            status: taskData.status,
-            summary: taskData.summary,
-            isLoading: false,
-            hasError: false,
-            error: null
-        };
-        
-        updateTableRow(index, result);
-        
-        // Обновляем сохраненные результаты
+        const result = apiResponseToRow(taskId, taskData, tableColumns);
+        Object.assign(result, { isLoading: false, hasError: false, error: null });
+        updateTableRow(index, result, tableColumns);
         const savedResults = await chrome.storage.local.get(['resultsData']);
         if (savedResults.resultsData && savedResults.resultsData[index]) {
             savedResults.resultsData[index] = result;
             await chrome.storage.local.set({ resultsData: savedResults.resultsData });
         }
-        
-        showMessage(`Статус для ${taskId} обновлен`, 'success');
+        showMessage(`Данные для ${taskId} обновлены`, 'success');
     } catch (error) {
-        addLog(`Ошибка при повторном запросе ${taskId}: ${error.message}`, 'error', {
-            taskId: taskId,
-            error: error.toString()
+        addLog(`Ошибка при повторном запросе ${taskId}: ${error.message}`, 'error', { taskId, error: error.toString() });
+        const row = { taskId };
+        tableColumns.forEach(col => {
+            row[col.id] = col.id === 'summary' ? error.message.substring(0, 50) : (col.id === 'id' ? taskId : 'Ошибка');
         });
-        
-        const result = {
-            taskId: taskId,
-            status: 'Ошибка',
-            summary: error.message.substring(0, 50),
-            isLoading: false,
-            hasError: true,
-            error: error
-        };
-        
-        updateTableRow(index, result);
-        showMessage(`Ошибка при загрузке статуса для ${taskId}`, 'error');
+        const result = { ...row, isLoading: false, hasError: true, error };
+        updateTableRow(index, result, tableColumns);
+        showMessage(`Ошибка при загрузке ${taskId}`, 'error');
     }
 }
 
-// Копирование только статусов
-document.getElementById('copyStatuses').addEventListener('click', async () => {
-    const tableBody = document.getElementById('resultsTableBody');
-    const rows = tableBody.querySelectorAll('tr');
-    
-    if (rows.length === 0) {
-        showMessage('Нет данных для копирования', 'warning');
-        return;
-    }
-    
-    // Формируем текст для копирования (только статусы, по одному на строку)
-    let text = '';
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 1) {
-            text += cells[0].textContent + '\n'; // Первая колонка - статус
-        }
-    });
-    
-    try {
-        await navigator.clipboard.writeText(text.trim());
-        showMessage('Статусы скопированы в буфер обмена!', 'success');
-        addLog('Статусы скопированы', 'success', {
-            rowsCount: rows.length
-        });
-    } catch (error) {
-        const errorDetails = {
-            error: error.message,
-            errorType: error.name || 'Error',
-            errorString: error.toString(),
-            stack: error.stack,
-            action: 'copyStatuses',
-            timestamp: new Date().toISOString()
-        };
-        addLog('Ошибка при копировании статусов: ' + error.message, 'error', errorDetails);
-        showMessage('Ошибка при копировании', 'error');
-    }
-});
+// Копирование первой колонки (удобная кнопка «Копировать статусы»)
+document.getElementById('copyStatuses').addEventListener('click', () => copyColumnToClipboard(0));
 
-// Копирование таблицы результатов
+// Копирование таблицы результатов (заголовки из thead, строки из tbody)
 document.getElementById('copyResults').addEventListener('click', async () => {
+    const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
     const tableBody = document.getElementById('resultsTableBody');
+    if (!theadRow || !tableBody) return;
     const rows = tableBody.querySelectorAll('tr');
-    
     if (rows.length === 0) {
         showMessage('Нет данных для копирования', 'warning');
         return;
     }
-    
-    // Формируем текст для копирования (табличный формат)
-    let text = 'Статус\tЗадача\tОписание\n';
+    const headers = [];
+    theadRow.querySelectorAll('th').forEach(th => {
+        const label = th.querySelector('.th-wrap span')?.textContent || th.textContent.trim();
+        headers.push(label);
+    });
+    let text = headers.join('\t') + '\n';
     rows.forEach(row => {
         const cells = row.querySelectorAll('td');
-        if (cells.length >= 3) {
-            text += `${cells[0].textContent}\t${cells[1].textContent}\t${cells[2].textContent}\n`;
-        }
+        const parts = [];
+        cells.forEach(cell => parts.push(cell.textContent.trim().replace(/\n/g, ' ')));
+        text += parts.join('\t') + '\n';
     });
-    
     try {
         await navigator.clipboard.writeText(text);
         showMessage('Таблица скопирована в буфер обмена!', 'success');
-        addLog('Таблица результатов скопирована', 'success', {
-            rowsCount: rows.length
-        });
     } catch (error) {
-        const errorDetails = {
-            error: error.message,
-            errorType: error.name || 'Error',
-            errorString: error.toString(),
-            stack: error.stack,
-            action: 'copyResults',
-            timestamp: new Date().toISOString()
-        };
-        addLog('Ошибка при копировании таблицы: ' + error.message, 'error', errorDetails);
+        addLog('Ошибка при копировании таблицы: ' + error.message, 'error', error);
         showMessage('Ошибка при копировании', 'error');
     }
 });

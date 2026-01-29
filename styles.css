@@ -490,3 +490,62 @@ textarea:focus {
     max-width: 300px;
     word-wrap: break-word;
 }
+
+/* Редактор колонок в настройках */
+.table-columns-list {
+    margin-top: 10px;
+}
+.table-columns-list .column-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.table-columns-list .column-row input[type="text"] {
+    flex: 1;
+    min-width: 0;
+}
+.table-columns-list .column-row .col-field {
+    flex: 1;
+    min-width: 80px;
+}
+.table-columns-list .column-row .col-label {
+    flex: 1;
+    min-width: 80px;
+}
+.table-columns-list .column-row .btn-remove-col {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    background: #ea4335;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.table-columns-list .column-row .btn-remove-col:hover {
+    background: #d33b2c;
+}
+
+/* Кнопка копирования в заголовке таблицы */
+.results-table th .th-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.results-table th .btn-copy-col {
+    padding: 2px 6px;
+    font-size: 11px;
+    border: none;
+    border-radius: 3px;
+    background: #e0e0e0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.results-table th .btn-copy-col:hover {
+    background: #4285f4;
+    color: white;
+}
+.results-table th .btn-copy-col:active {
+    transform: scale(0.98);
+}
