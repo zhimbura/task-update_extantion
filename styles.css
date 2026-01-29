@@ -426,11 +426,13 @@ textarea:focus {
 .results-table-container {
     border: 1px solid #ddd;
     border-radius: 4px;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: visible;
 }
 
 .results-table {
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 13px;
 }
@@ -501,6 +503,18 @@ textarea:focus {
     align-items: center;
     margin-bottom: 8px;
 }
+.table-columns-list .column-row .col-visible-wrap {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+.table-columns-list .column-row .col-visible {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #4285f4;
+}
 .table-columns-list .column-row input[type="text"] {
     flex: 1;
     min-width: 0;
@@ -525,6 +539,12 @@ textarea:focus {
 }
 .table-columns-list .column-row .btn-remove-col:hover {
     background: #d33b2c;
+}
+
+/* Скрытые колонки таблицы (отключены чекбоксом в настройках) */
+.results-table th.col-hidden,
+.results-table td.col-hidden {
+    display: none !important;
 }
 
 /* Кнопка копирования в заголовке таблицы */

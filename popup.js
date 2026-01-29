@@ -1,8 +1,8 @@
-// Колонки таблицы по умолчанию (поля YT)
+// Колонки таблицы по умолчанию (id = имя поля в API); visible: true = колонка показывается в таблице
 const DEFAULT_TABLE_COLUMNS = [
-    { id: 'Stage3', label: 'Статус' },
-    { id: 'id', label: 'Задача' },
-    { id: 'summary', label: 'Описание' }
+    { id: 'Stage', label: 'Статус', visible: true },
+    { id: 'id', label: 'Задача', visible: true },
+    { id: 'summary', label: 'Описание', visible: true }
 ];
 
 // Система логирования
@@ -203,22 +203,28 @@ async function restoreScrollPosition() {
     }
 }
 
-// Рендер списка колонок в настройках
+// Рендер списка колонок в настройках (чекбокс = включить колонку в таблице)
 function renderTableColumnsList(columns) {
     const container = document.getElementById('tableColumnsList');
     if (!container) return;
     container.innerHTML = '';
     (columns || DEFAULT_TABLE_COLUMNS).forEach((col, index) => {
+        const visible = col.visible !== false;
         const row = document.createElement('div');
         row.className = 'column-row';
         row.innerHTML = `
-            <input type="text" class="col-field" data-index="${index}" placeholder="Поле (id, summary, Stage3...)" value="${escapeHtml(col.id)}" title="Поле YouTrack: id, summary или имя кастомного поля">
+            <label class="col-visible-wrap" title="${visible ? 'Колонка отображается' : 'Колонка скрыта'}">
+                <input type="checkbox" class="col-visible" data-index="${index}" ${visible ? 'checked' : ''}>
+            </label>
+            <input type="text" class="col-field" data-index="${index}" placeholder="Поле (id, summary, Stage...)" value="${escapeHtml(col.id)}" title="Поле YouTrack: id, summary или имя кастомного поля">
             <input type="text" class="col-label" data-index="${index}" placeholder="Подпись колонки" value="${escapeHtml(col.label)}">
             <button type="button" class="btn-remove-col" data-index="${index}" title="Удалить колонку">✕</button>
         `;
         container.appendChild(row);
     });
-    // Обработчики
+    container.querySelectorAll('.col-visible').forEach(cb => {
+        cb.addEventListener('change', () => syncTableColumnsFromDOM());
+    });
     container.querySelectorAll('.col-field, .col-label').forEach(input => {
         input.addEventListener('input', () => syncTableColumnsFromDOM());
     });
@@ -245,11 +251,13 @@ function getTableColumnsFromDOM() {
     const rows = document.querySelectorAll('#tableColumnsList .column-row');
     const cols = [];
     rows.forEach(row => {
+        const visibleCb = row.querySelector('.col-visible');
         const fieldInput = row.querySelector('.col-field');
         const labelInput = row.querySelector('.col-label');
         if (fieldInput && labelInput) {
             const id = (fieldInput.value || '').trim() || 'Field';
-            cols.push({ id, label: (labelInput.value || '').trim() || id });
+            const visible = visibleCb ? visibleCb.checked : true;
+            cols.push({ id, label: (labelInput.value || '').trim() || id, visible });
         }
     });
     return cols.length > 0 ? cols : DEFAULT_TABLE_COLUMNS;
@@ -267,7 +275,8 @@ async function saveTableColumns(columns) {
 // Получить текущие колонки из storage (для использования при загрузке статусов и отображении)
 async function getTableColumns() {
     const st = await chrome.storage.local.get(['tableColumns']);
-    return Array.isArray(st.tableColumns) && st.tableColumns.length > 0 ? st.tableColumns : DEFAULT_TABLE_COLUMNS;
+    const raw = Array.isArray(st.tableColumns) && st.tableColumns.length > 0 ? st.tableColumns : DEFAULT_TABLE_COLUMNS;
+    return raw.map(c => ({ ...c, visible: c.visible !== false }));
 }
 
 // Переключение на раздел настроек
@@ -277,10 +286,16 @@ function showSettingsView() {
     getTableColumns().then(renderTableColumnsList);
 }
 
-// Переключение на основной раздел
-function showMainView() {
+// Переключение на основной раздел (перерисовываем таблицу, чтобы применить видимость колонок)
+async function showMainView() {
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('mainView').style.display = 'block';
+    const { resultsData } = await chrome.storage.local.get(['resultsData']);
+    if (resultsData && resultsData.length > 0) {
+        const tableColumns = await getTableColumns();
+        displayResults(resultsData, tableColumns);
+        document.getElementById('resultsSection').style.display = 'block';
+    }
 }
 
 // Функция сохранения настроек
@@ -445,7 +460,7 @@ document.getElementById('taskList').addEventListener('input', () => autoSave());
 
 document.getElementById('addTableColumn').addEventListener('click', () => {
     const cols = getTableColumnsFromDOM();
-    cols.push({ id: 'Field', label: 'Новая колонка' });
+    cols.push({ id: 'Field', label: 'Новая колонка', visible: true });
     saveTableColumns(cols);
     renderTableColumnsList(cols);
 });
@@ -565,10 +580,11 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
     await Promise.all(updatePromises);
 });
 
-// Запрос полей задачи из YouTrack API (id, summary, все customFields по имени)
+// Запрос полей задачи из YouTrack API (id, idReadable, summary, все customFields по имени; value — число для дат или объект с name)
 async function fetchTaskStatus(taskId, host, token) {
     const baseHost = (host || '').trim().replace(/\/+$/, '');
-    const url = `${baseHost}/api/issues/${taskId}?fields=id,summary,customFields(name,value(name))`;
+    // Проверено через curl: только value(name) раскрывает enum/state (value(name),value даёт только $type). Даты при value(name) приходят числом.
+const url = `${baseHost}/api/issues/${taskId}?fields=id,idReadable,summary,project(name,shortName),customFields(name,value(name))`;
     
     addLog(`Запрос к API: ${url}`, 'info');
     
@@ -621,27 +637,137 @@ async function fetchTaskStatus(taskId, host, token) {
         throw new Error(`Ошибка парсинга ответа: ${error.message}`);
     }
 
+    // Полный вывод response от API в формате JSON
+    addLog(`${taskId}: полный response API (JSON)`, 'info', json);
+
+    // Лог: что пришло от API (сразу одна строка, чтобы было видно даже без details)
+    const cfCount = Array.isArray(json.customFields) ? json.customFields.length : 0;
+    addLog(`${taskId}: ответ получен, кастомных полей: ${cfCount}`, 'info');
+    let received;
+    try {
+        received = {
+            id: json.idReadable ?? json.id,
+            summaryLength: (json.summary || '').length,
+            project: json.project ? (json.project.name || json.project.shortName) : null,
+            customFieldsCount: cfCount,
+            customFieldsRaw: Array.isArray(json.customFields) ? json.customFields.map(f => ({
+                name: f.name,
+                valueType: f.value == null ? 'null' : Array.isArray(f.value) ? `array[${f.value.length}]` : typeof f.value,
+                valueHint: f.value == null ? null : Array.isArray(f.value) ? (f.value[0] && typeof f.value[0] === 'object' && f.value[0].name) ? f.value.map(x => x.name).join(', ') : '(items)' : (typeof f.value === 'object' ? (f.value.name ?? f.value.id ?? '(object)') : String(f.value).slice(0, 50))
+            })) : []
+        };
+        addLog(`${taskId}: получен ответ API`, 'info', received);
+    } catch (e) {
+        addLog(`${taskId}: ошибка при формировании лога ответа: ${e.message}`, 'warning', { error: String(e) });
+    }
+
     const summary = json.summary || 'Нет описания';
     const customFields = {};
     if (Array.isArray(json.customFields)) {
         json.customFields.forEach(f => {
-            if (f.name && f.value && f.value.name) customFields[f.name] = f.value.name;
+            if (!f.name) return;
+            const v = f.value;
+            let parsed;
+            let branch;
+            if (v === null || v === undefined) {
+                customFields[f.name] = '—';
+                branch = 'null→"—"';
+                parsed = '—';
+            } else if (typeof v === 'number') {
+                parsed = formatTimestamp(v);
+                customFields[f.name] = parsed;
+                branch = 'number→date';
+            } else if (typeof v === 'object' && typeof v.value === 'number') {
+                parsed = formatTimestamp(v.value);
+                customFields[f.name] = parsed;
+                branch = 'object.value(number)→date';
+            } else if (Array.isArray(v)) {
+                const s = v.length === 0 ? 'empty' : v.map(x => getDisplayFromObject(x) || (x != null && typeof x !== 'object' ? String(x) : '')).filter(Boolean).join(', ');
+                customFields[f.name] = s;
+                branch = 'array→join';
+                parsed = s;
+            } else if (typeof v === 'object') {
+                const arr = Array.isArray(v.value) ? v.value : Array.isArray(v.values) ? v.values : null;
+                if (arr !== null) {
+                    const s = arr.length === 0 ? 'empty' : arr.map(x => getDisplayFromObject(x) || (x != null && typeof x !== 'object' ? String(x) : '')).filter(Boolean).join(', ');
+                    customFields[f.name] = s;
+                    branch = 'object.value/values(array)→join';
+                    parsed = s;
+                } else {
+                    const obj = v.value && typeof v.value === 'object' && !Array.isArray(v.value) ? v.value : v;
+                    const s = getDisplayFromObject(obj);
+                    customFields[f.name] = s;
+                    branch = 'object→getDisplayFromObject';
+                    parsed = s;
+                }
+            } else if (typeof v === 'string') {
+                customFields[f.name] = v;
+                branch = 'string→as is';
+                parsed = v.length > 50 ? v.slice(0, 50) + '…' : v;
+            } else {
+                customFields[f.name] = String(v);
+                branch = 'other→String';
+                parsed = String(v).slice(0, 50);
+            }
+            const parsedStr = typeof parsed === 'string' ? (parsed.length > 60 ? parsed.slice(0, 60) + '…' : parsed) : String(parsed);
+            addLog(`  ${f.name}: ${branch} → ${JSON.stringify(parsedStr)}`, 'info');
         });
     }
-    return {
-        id: json.id || taskId,
+    const projectName = json.project ? (json.project.name || json.project.shortName || '') : '';
+    const result = {
+        id: json.idReadable || json.id || taskId,
         summary,
+        project: projectName,
         customFields
     };
+    addLog(`${taskId}: распарсено полей: ${Object.keys(result.customFields).length}`, 'success');
+    addLog(`${taskId}: распарсено`, 'success', { id: result.id, project: result.project, customFieldsKeys: Object.keys(result.customFields), customFields: result.customFields });
+    return result;
 }
 
-// Преобразовать ответ API в объект строки по колонкам
+// Извлечь отображаемую строку из объекта (enum/state): проверяем разные ключи API
+function getDisplayFromObject(obj) {
+    if (obj == null || typeof obj !== 'object') return '';
+    // Сначала вложенный value (REST иногда отдаёт { value: { name: "..." } })
+    const nested = obj.value && typeof obj.value === 'object' && !Array.isArray(obj.value);
+    if (nested) {
+        const fromNested = getDisplayFromObject(obj.value);
+        if (fromNested) return fromNested;
+    }
+    const s = (obj.name != null && String(obj.name).trim() !== '') ? String(obj.name)
+        : (obj.localizedName != null && String(obj.localizedName).trim() !== '') ? String(obj.localizedName)
+        : (obj.presentation != null && String(obj.presentation).trim() !== '') ? String(obj.presentation)
+        : (obj.id != null) ? String(obj.id)
+        : (obj.ringId != null) ? String(obj.ringId)
+        : '';
+    if (s) return s;
+    // Любая непустая строка из объекта (кроме $type)
+    for (const [key, val] of Object.entries(obj)) {
+        if (key === '$type') continue;
+        if (typeof val === 'string' && val.trim() !== '') return val;
+    }
+    return '';
+}
+
+// Форматирование timestamp (мс) в дату и время: "25 фев. 2026 12:00"
+function formatTimestamp(ms) {
+    if (ms == null || typeof ms !== 'number') return '';
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return String(ms);
+    const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+    const timeStr = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${dateStr} ${timeStr}`;
+}
+
+// Преобразовать ответ API в объект строки по колонкам (id колонки = имя поля в API)
 function apiResponseToRow(taskId, apiData, columns) {
     const row = { taskId };
+    const cf = apiData.customFields || {};
     columns.forEach(col => {
         if (col.id === 'id') row[col.id] = apiData.id || taskId;
         else if (col.id === 'summary') row[col.id] = apiData.summary || '';
-        else row[col.id] = (apiData.customFields && apiData.customFields[col.id]) || '';
+        else if (col.id === 'project' || col.id === 'Project') row[col.id] = apiData.project ?? '';
+        else row[col.id] = cf[col.id] ?? '';
     });
     return row;
 }
@@ -651,9 +777,9 @@ function normalizeResultForColumns(item, columns) {
     const out = { taskId: item.taskId, isLoading: item.isLoading, hasError: item.hasError, error: item.error };
     columns.forEach(col => {
         if (item[col.id] !== undefined) out[col.id] = item[col.id];
-        else if (col.id === 'Stage3' && item.status !== undefined) out[col.id] = item.status;
         else if (col.id === 'summary') out[col.id] = item.summary != null ? item.summary : '';
         else if (col.id === 'id') out[col.id] = item.taskId || '';
+        else if (col.id === 'project' || col.id === 'Project') out[col.id] = item.project ?? item.Project ?? '';
         else out[col.id] = '';
     });
     return out;
@@ -668,7 +794,9 @@ function displayResults(results, columnsArg) {
 
     theadRow.innerHTML = '';
     tableColumns.forEach((col, colIndex) => {
+        const visible = col.visible !== false;
         const th = document.createElement('th');
+        if (!visible) th.classList.add('col-hidden');
         const wrap = document.createElement('span');
         wrap.className = 'th-wrap';
         wrap.innerHTML = `<span>${escapeHtml(col.label)}</span><button type="button" class="btn-copy-col" data-col-index="${colIndex}" title="Копировать столбец">📋</button>`;
@@ -714,8 +842,10 @@ function createTableRow(tableBody, item, index, tableColumns) {
     row.setAttribute('data-task-id', item.taskId);
 
     tableColumns.forEach((col, colIndex) => {
+        const visible = col.visible !== false;
         const td = document.createElement('td');
         td.className = col.id === 'id' ? 'task-id' : col.id === 'summary' ? 'summary' : 'col-' + col.id;
+        if (!visible) td.classList.add('col-hidden');
         td.setAttribute('data-col-id', col.id);
 
         if (item.hasError && col.id === 'summary') {
@@ -835,10 +965,22 @@ async function retryTaskStatus(taskId, index) {
     }
 }
 
-// Копирование первой колонки (удобная кнопка «Копировать статусы»)
-document.getElementById('copyStatuses').addEventListener('click', () => copyColumnToClipboard(0));
+// Копирование первой видимой колонки (кнопка «Копировать статусы»)
+document.getElementById('copyStatuses').addEventListener('click', async () => {
+    const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
+    if (!theadRow) return;
+    let firstVisibleIndex = 0;
+    const ths = theadRow.querySelectorAll('th');
+    for (let i = 0; i < ths.length; i++) {
+        if (!ths[i].classList.contains('col-hidden')) {
+            firstVisibleIndex = i;
+            break;
+        }
+    }
+    copyColumnToClipboard(firstVisibleIndex);
+});
 
-// Копирование таблицы результатов (заголовки из thead, строки из tbody)
+// Копирование таблицы результатов (только видимые колонки)
 document.getElementById('copyResults').addEventListener('click', async () => {
     const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
     const tableBody = document.getElementById('resultsTableBody');
@@ -849,7 +991,10 @@ document.getElementById('copyResults').addEventListener('click', async () => {
         return;
     }
     const headers = [];
-    theadRow.querySelectorAll('th').forEach(th => {
+    const visibleIndices = [];
+    theadRow.querySelectorAll('th').forEach((th, i) => {
+        if (th.classList.contains('col-hidden')) return;
+        visibleIndices.push(i);
         const label = th.querySelector('.th-wrap span')?.textContent || th.textContent.trim();
         headers.push(label);
     });
@@ -857,7 +1002,9 @@ document.getElementById('copyResults').addEventListener('click', async () => {
     rows.forEach(row => {
         const cells = row.querySelectorAll('td');
         const parts = [];
-        cells.forEach(cell => parts.push(cell.textContent.trim().replace(/\n/g, ' ')));
+        visibleIndices.forEach(i => {
+            if (cells[i]) parts.push(cells[i].textContent.trim().replace(/\n/g, ' '));
+        });
         text += parts.join('\t') + '\n';
     });
     try {
