@@ -55,17 +55,13 @@ function updateLogsDisplay() {
     logsContent.scrollTop = logsContent.scrollHeight;
 }
 
-// Обработка сообщений от content script (для логов и OAuth)
+// Обработка сообщений (для логов)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'log') {
         addLog(request.message, request.type || 'info', request.details);
         sendResponse({ success: true });
         return true;
     }
-    
-    // OAuth токены теперь обрабатываются в background.js
-    // popup может также использовать chrome.identity напрямую, но для единообразия
-    // лучше использовать background script
 });
 
 // Загрузка сохраненных настроек

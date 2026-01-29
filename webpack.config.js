@@ -3,7 +3,6 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   entry: {
-    content: './content.js',
     popup: './popup.js'
   },
   output: {
@@ -29,8 +28,6 @@ module.exports = {
         { from: 'manifest.json', to: 'manifest.json' },
         { from: 'popup.html', to: 'popup.html' },
         { from: 'styles.css', to: 'styles.css' },
-        { from: 'sheets-api.js', to: 'sheets-api.js' },
-        { from: 'background.js', to: 'background.js' },
         { from: '*.png', to: '[name][ext]' }
       ]
     })
