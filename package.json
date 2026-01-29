@@ -1,6 +1,6 @@
 {
   "name": "youtrack-task-status-updater",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Chrome-расширение YT Status Tools: получение статусов и полей задач из YouTrack API, настраиваемые колонки, копирование столбцов.",
   "scripts": {
     "build": "webpack --mode production && (cd dist && zip -r ../dist.zip .)",
