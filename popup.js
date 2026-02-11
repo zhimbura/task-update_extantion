@@ -5,6 +5,11 @@ const DEFAULT_TABLE_COLUMNS = [
     { id: 'summary', label: 'Описание', visible: true }
 ];
 
+// Плейсхолдер для строк, в которых не удалось распознать ID задачи
+const PARSE_ERROR_ID = '__PARSE_ERROR__';
+const PARSE_ERROR_LABEL = 'ошибка парсинга';
+const PARSE_ERROR_COPY = 'ошибка парсинга задачи';
+
 // Система логирования
 let logs = [];
 
@@ -333,10 +338,22 @@ function getCurrentResults() {
 
     const results = [];
     tableBody.querySelectorAll('tr').forEach((row) => {
-        const taskId = row.getAttribute('data-task-id');
+        let taskId = row.getAttribute('data-task-id');
         if (!taskId) return;
+        const isParseError = row.hasAttribute('data-parse-error');
         const cells = row.querySelectorAll('td');
-        const item = { taskId };
+        const item = { taskId: isParseError ? PARSE_ERROR_ID : taskId, isParseError };
+        if (isParseError) {
+            cells.forEach((cell, i) => {
+                const colId = cell.getAttribute('data-col-id');
+                if (colId) item[colId] = PARSE_ERROR_LABEL;
+            });
+            item.hasError = true;
+            item.error = null;
+            item.isLoading = false;
+            results.push(item);
+            return;
+        }
         let hasError = false;
         let errorSummary = '';
         cells.forEach((cell, i) => {
@@ -471,37 +488,36 @@ document.getElementById('clearData').addEventListener('click', async () => {
 });
 
 // Парсинг списка задач из текста
+// Поддерживаем разные тире и несколько ID в одной строке (чтобы не терять задачи при копипасте)
 function parseTaskList(text) {
     if (!text || !text.trim()) {
         return [];
     }
-    
-    // Разбиваем по строкам и запятым
-    const lines = text.split(/[\n,;]+/);
+    const normalizeDashes = (s) => String(s).replace(/[\u2010-\u2014\u2212–—−]/g, '-');
+    const idRegex = /([A-Za-z]+)-(\d+)/gi;
     const tasks = [];
-    
+    const lines = text.split(/[\n,;]+/);
+    let linesWithNoId = 0;
+
     for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        
-        // Ищем ID задачи в формате XXX-123
-        const match = trimmed.match(/([A-Z]+-\d+)/i);
-        if (match) {
-            tasks.push(match[1].toUpperCase());
+        const normalized = normalizeDashes(trimmed);
+        let found = 0;
+        for (const match of normalized.matchAll(idRegex)) {
+            tasks.push((match[1] + '-' + match[2]).toUpperCase());
+            found++;
+        }
+        if (found === 0) {
+            linesWithNoId++;
+            tasks.push(PARSE_ERROR_ID);
         }
     }
-    
-    // Убираем дубликаты, сохраняя порядок
-    const uniqueTasks = [];
-    const seen = new Set();
-    for (const task of tasks) {
-        if (!seen.has(task)) {
-            seen.add(task);
-            uniqueTasks.push(task);
-        }
+
+    if (linesWithNoId > 0) {
+        addLog(`Парсинг: непустых строк без ID: ${linesWithNoId}`, 'info');
     }
-    
-    return uniqueTasks;
+    return tasks;
 }
 
 // Получение статусов
@@ -527,13 +543,18 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
         showMessage('Не найдено ни одной задачи в формате XXX-123', 'error');
         return;
     }
+    addLog(`Распознано задач: ${tasks.length}: ${tasks.join(', ')}`, 'info');
 
     const tableColumns = await getTableColumns();
     showMessage(`Загрузка полей для ${tasks.length} задач...`, 'info');
     document.getElementById('loadStatuses').disabled = true;
 
-    // Начальные результаты: по одной ячейке "Загрузка..." на каждую колонку
     const results = tasks.map(taskId => {
+        if (taskId === PARSE_ERROR_ID) {
+            const row = { taskId: PARSE_ERROR_ID, isParseError: true, isLoading: false, hasError: true, error: null };
+            tableColumns.forEach(col => { row[col.id] = PARSE_ERROR_LABEL; });
+            return row;
+        }
         const row = { taskId, isLoading: true, hasError: false, error: null };
         tableColumns.forEach(col => { row[col.id] = 'Загрузка...'; });
         return row;
@@ -544,6 +565,14 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
 
     let completedCount = 0;
     const updatePromises = tasks.map(async (taskId, index) => {
+        if (taskId === PARSE_ERROR_ID) {
+            completedCount++;
+            if (completedCount === tasks.length) {
+                document.getElementById('loadStatuses').disabled = false;
+                showMessage(`Загружено ${results.filter(r => !r.isParseError).length} задач, строк с ошибкой парсинга: ${results.filter(r => r.isParseError).length}`, results.some(r => r.isParseError) ? 'warning' : 'success');
+            }
+            return;
+        }
         try {
             addLog(`Запрос данных для ${taskId}...`, 'info');
             const taskData = await fetchTaskStatus(taskId, settings.youtrackHost, settings.youtrackToken);
@@ -554,7 +583,8 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
             completedCount++;
             await saveResults(results);
             if (completedCount === tasks.length) {
-                showMessage(`Загружено ${completedCount} задач`, 'success');
+                const parseErrors = results.filter(r => r.isParseError).length;
+                showMessage(parseErrors > 0 ? `Загружено ${completedCount - parseErrors} задач, ошибок парсинга: ${parseErrors}` : `Загружено ${completedCount} задач`, parseErrors > 0 ? 'warning' : 'success');
                 document.getElementById('loadStatuses').disabled = false;
             }
         } catch (error) {
@@ -568,9 +598,11 @@ document.getElementById('loadStatuses').addEventListener('click', async () => {
             completedCount++;
             await saveResults(results);
             if (completedCount === tasks.length) {
-                const errorCount = results.filter(r => r.hasError).length;
-                const successCount = completedCount - errorCount;
-                showMessage(`Загружено ${successCount} из ${completedCount}. Ошибок: ${errorCount}`, errorCount > 0 ? 'warning' : 'success');
+                const parseErrors = results.filter(r => r.isParseError).length;
+                const apiErrors = results.filter(r => r.hasError && !r.isParseError).length;
+                const successCount = completedCount - parseErrors - apiErrors;
+                const msg = parseErrors > 0 ? `Загружено ${successCount}, ошибок API: ${apiErrors}, ошибок парсинга: ${parseErrors}` : `Загружено ${successCount} из ${completedCount}. Ошибок: ${apiErrors}`;
+                showMessage(msg, apiErrors > 0 || parseErrors > 0 ? 'warning' : 'success');
                 document.getElementById('loadStatuses').disabled = false;
             }
         }
@@ -774,7 +806,13 @@ function apiResponseToRow(taskId, apiData, columns) {
 
 // Нормализация старых результатов (status/summary) в формат по колонкам
 function normalizeResultForColumns(item, columns) {
-    const out = { taskId: item.taskId, isLoading: item.isLoading, hasError: item.hasError, error: item.error };
+    const out = { taskId: item.taskId, isLoading: item.isLoading, hasError: item.hasError, error: item.error, isParseError: !!item.isParseError };
+    if (item.isParseError || item.taskId === PARSE_ERROR_ID) {
+        out.taskId = PARSE_ERROR_ID;
+        out.isParseError = true;
+        columns.forEach(col => { out[col.id] = PARSE_ERROR_LABEL; });
+        return out;
+    }
     columns.forEach(col => {
         if (item[col.id] !== undefined) out[col.id] = item[col.id];
         else if (col.id === 'summary') out[col.id] = item.summary != null ? item.summary : '';
@@ -823,8 +861,11 @@ async function copyColumnToClipboard(colIndex) {
     const rows = tableBody.querySelectorAll('tr');
     const values = [];
     rows.forEach(row => {
+        const isParseError = row.hasAttribute('data-parse-error');
         const cells = row.querySelectorAll('td');
-        if (cells[colIndex]) values.push(cells[colIndex].textContent.trim());
+        if (cells[colIndex]) {
+            values.push(isParseError ? PARSE_ERROR_COPY : cells[colIndex].textContent.trim());
+        }
     });
     const text = values.join('\n');
     try {
@@ -840,6 +881,7 @@ function createTableRow(tableBody, item, index, tableColumns) {
     const row = document.createElement('tr');
     row.setAttribute('data-index', index);
     row.setAttribute('data-task-id', item.taskId);
+    if (item.isParseError) row.setAttribute('data-parse-error', '1');
 
     tableColumns.forEach((col, colIndex) => {
         const visible = col.visible !== false;
@@ -848,7 +890,10 @@ function createTableRow(tableBody, item, index, tableColumns) {
         if (!visible) td.classList.add('col-hidden');
         td.setAttribute('data-col-id', col.id);
 
-        if (item.hasError && col.id === 'summary') {
+        if (item.isParseError) {
+            td.textContent = PARSE_ERROR_LABEL;
+            td.style.color = '#dc3545';
+        } else if (item.hasError && col.id === 'summary') {
             const errorText = document.createElement('span');
             errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
             errorText.style.color = '#dc3545';
@@ -890,7 +935,10 @@ function updateTableRow(index, item, tableColumns) {
         if (!td) return;
         td.innerHTML = '';
         td.style = '';
-        if (item.hasError && col.id === 'summary') {
+        if (item.isParseError) {
+            td.textContent = PARSE_ERROR_LABEL;
+            td.style.color = '#dc3545';
+        } else if (item.hasError && col.id === 'summary') {
             const errorText = document.createElement('span');
             errorText.textContent = item.summary || item.error?.message || 'Ошибка получения данных';
             errorText.style.color = '#dc3545';
@@ -920,6 +968,7 @@ function updateTableRow(index, item, tableColumns) {
 
 // Повторный запрос данных задачи
 async function retryTaskStatus(taskId, index) {
+    if (taskId === PARSE_ERROR_ID) return;
     const [settings, tableColumns] = await Promise.all([
         chrome.storage.local.get(['youtrackHost', 'youtrackToken']),
         getTableColumns()
@@ -965,21 +1014,6 @@ async function retryTaskStatus(taskId, index) {
     }
 }
 
-// Копирование первой видимой колонки (кнопка «Копировать статусы»)
-document.getElementById('copyStatuses').addEventListener('click', async () => {
-    const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
-    if (!theadRow) return;
-    let firstVisibleIndex = 0;
-    const ths = theadRow.querySelectorAll('th');
-    for (let i = 0; i < ths.length; i++) {
-        if (!ths[i].classList.contains('col-hidden')) {
-            firstVisibleIndex = i;
-            break;
-        }
-    }
-    copyColumnToClipboard(firstVisibleIndex);
-});
-
 // Копирование таблицы результатов (только видимые колонки)
 document.getElementById('copyResults').addEventListener('click', async () => {
     const theadRow = document.getElementById('resultsTableHead')?.querySelector('tr');
@@ -1001,9 +1035,10 @@ document.getElementById('copyResults').addEventListener('click', async () => {
     let text = headers.join('\t') + '\n';
     rows.forEach(row => {
         const cells = row.querySelectorAll('td');
+        const isParseError = row.hasAttribute('data-parse-error');
         const parts = [];
         visibleIndices.forEach(i => {
-            if (cells[i]) parts.push(cells[i].textContent.trim().replace(/\n/g, ' '));
+            if (cells[i]) parts.push(isParseError ? PARSE_ERROR_COPY : cells[i].textContent.trim().replace(/\n/g, ' '));
         });
         text += parts.join('\t') + '\n';
     });
