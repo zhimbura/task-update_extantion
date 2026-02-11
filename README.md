@@ -1,6 +1,18 @@
-# YouTrack Task Status Updater - Chrome Extension
+# YT Status Tools — Chrome Extension
 
-Chrome расширение для автоматического обновления статусов задач из YouTrack API в Google Sheets.
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/youtrack-status-tools/mmpcdkbebgpmpiffplkedhfkepalhedc">
+    <img src="icon128.png" width="128" alt="YouTrack Status Tools" />
+  </a>
+</p>
+
+**Получение статусов и полей задач из YouTrack API:** настраиваемые колонки, копирование столбцов, поддержка любых полей API.
+
+**[Установить из Chrome Web Store](https://chromewebstore.google.com/detail/youtrack-status-tools/mmpcdkbebgpmpiffplkedhfkepalhedc)**
+
+Скриншоты интерфейса — на [странице расширения в Chrome Web Store](https://chromewebstore.google.com/detail/youtrack-status-tools/mmpcdkbebgpmpiffplkedhfkepalhedc).
+
+---
 
 ## Возможности
 
@@ -13,10 +25,13 @@ Chrome расширение для автоматического обновле
 
 ## Установка
 
+**Из Chrome Web Store (рекомендуется):**  
+[Открыть страницу расширения](https://chromewebstore.google.com/detail/youtrack-status-tools/mmpcdkbebgpmpiffplkedhfkepalhedc) → нажмите «Установить».
+
+**Вручную (распакованное расширение):**
 1. Откройте Chrome и перейдите в `chrome://extensions/`
-2. Включите "Режим разработчика" (Developer mode)
-3. Нажмите "Загрузить распакованное расширение" (Load unpacked)
-4. Выберите папку с расширением
+2. Включите «Режим разработчика»
+3. Нажмите «Загрузить распакованное расширение» и выберите папку `dist/` (после `npm run build`)
 
 ## Использование
 
