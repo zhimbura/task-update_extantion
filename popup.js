@@ -10,54 +10,15 @@ const PARSE_ERROR_ID = '__PARSE_ERROR__';
 const PARSE_ERROR_LABEL = 'ошибка парсинга';
 const PARSE_ERROR_COPY = 'ошибка парсинга задачи';
 
-// Система логирования
-let logs = [];
-
+// Логирование в консоль
 function addLog(message, type = 'info', details = null) {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-        timestamp,
-        message,
-        type,
-        details
-    };
-    logs.push(logEntry);
-    
-    // Сохраняем последние 100 логов
-    const maxLogs = 100;
-    if (logs.length > maxLogs) {
-        logs = logs.slice(-maxLogs);
-    }
-    
-    updateLogsDisplay();
-    
-    // Также выводим в консоль для отладки
     const consoleMethod = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log';
-    const timeStr = new Date(timestamp).toLocaleTimeString();
-    if (details && typeof details === 'object') {
-        console[consoleMethod](`[${timeStr}] ${message}`, details);
-    } else if (details) {
+    const timeStr = new Date().toLocaleTimeString();
+    if (details != null) {
         console[consoleMethod](`[${timeStr}] ${message}`, details);
     } else {
         console[consoleMethod](`[${timeStr}] ${message}`);
     }
-}
-
-function updateLogsDisplay() {
-    const logsContent = document.getElementById('logsContent');
-    if (!logsContent) return;
-    
-    logsContent.innerHTML = logs.map(log => {
-        const timeStr = new Date(log.timestamp).toLocaleTimeString('ru-RU');
-        const detailsStr = log.details ? '\n' + JSON.stringify(log.details, null, 2) : '';
-        return `<div class="log-entry ${log.type}">
-            <span class="log-timestamp">[${timeStr}]</span>
-            ${log.message}${detailsStr}
-        </div>`;
-    }).join('');
-    
-    // Прокручиваем вниз
-    logsContent.scrollTop = logsContent.scrollHeight;
 }
 
 // Обработка сообщений (для логов)
@@ -71,9 +32,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Загрузка сохраненных настроек
 document.addEventListener('DOMContentLoaded', async () => {
-    // Добавляем обработчики для кнопок
-    document.getElementById('saveLogs').addEventListener('click', saveLogsToFile);
-    
     const settings = await chrome.storage.local.get([
         'youtrackHost',
         'youtrackToken',
@@ -1051,88 +1009,7 @@ document.getElementById('copyResults').addEventListener('click', async () => {
     }
 });
 
-// Управление логами
-document.getElementById('toggleLogs').addEventListener('click', () => {
-    const logsSection = document.getElementById('logsSection');
-    logsSection.style.display = 'block';
-    updateLogsDisplay();
-});
-
-document.getElementById('hideLogs').addEventListener('click', () => {
-    const logsSection = document.getElementById('logsSection');
-    logsSection.style.display = 'none';
-});
-
-document.getElementById('clearLogs').addEventListener('click', async () => {
-    logs = [];
-    updateLogsDisplay();
-    // Очищаем сохраненные логи
-    await chrome.storage.local.remove(['debugLogs']);
-    addLog('Логи очищены', 'info');
-});
-
-document.getElementById('copyLogs').addEventListener('click', async () => {
-    const logsText = formatLogsAsText(logs);
-    
-    try {
-        await navigator.clipboard.writeText(logsText);
-        addLog('Логи скопированы в буфер обмена', 'success');
-        showMessage('Логи скопированы!', 'success');
-    } catch (error) {
-        const errorDetails = {
-            error: error.message,
-            errorType: error.name || 'Error',
-            errorString: error.toString(),
-            stack: error.stack,
-            action: 'copyLogs',
-            timestamp: new Date().toISOString()
-        };
-        addLog('Ошибка при копировании логов: ' + error.message, 'error', errorDetails);
-        showMessage('Ошибка при копировании', 'error');
-    }
-});
-
-// Функция форматирования логов в текст
-function formatLogsAsText(logsArray) {
-    return logsArray.map(log => {
-        const timeStr = new Date(log.timestamp).toLocaleString('ru-RU');
-        const detailsStr = log.details ? '\n' + JSON.stringify(log.details, null, 2) : '';
-        return `[${timeStr}] ${log.type.toUpperCase()}: ${log.message}${detailsStr}`;
-    }).join('\n\n');
-}
-
-// Сохранение логов в файл
-async function saveLogsToFile() {
-    try {
-        const logsText = formatLogsAsText(logs);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const filename = `youtrack-extension-logs-${timestamp}.txt`;
-        
-        // Создаем Blob с логами
-        const blob = new Blob([logsText], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        
-        // Создаем временную ссылку для скачивания
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // Освобождаем URL
-        setTimeout(() => URL.revokeObjectURL(url), 100);
-        
-        addLog(`Логи сохранены в файл: ${filename}`, 'success');
-        showMessage(`Логи сохранены в файл: ${filename}`, 'success');
-    } catch (error) {
-        addLog('Ошибка при сохранении логов в файл: ' + error.message, 'error', error);
-        showMessage('Ошибка при сохранении файла', 'error');
-    }
-}
-
-
-// Перехватываем все ошибки и добавляем в логи
+// Перехватываем все ошибки и пишем в консоль
 window.addEventListener('error', (event) => {
     const errorDetails = {
         error: event.message,
