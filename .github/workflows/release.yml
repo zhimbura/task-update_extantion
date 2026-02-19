@@ -30,10 +30,18 @@ jobs:
       - name: Rename artifact
         run: mv dist.zip YouTrack-Status-Tools-${{ github.ref_name }}.zip
 
+      - name: Check release notes file exists
+        run: |
+          NOTES="docs/release-${{ github.ref_name }}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::Release notes file not found: $NOTES. Add docs/release-${{ github.ref_name }}.md before releasing."
+            exit 1
+          fi
+
       - name: Create Release and upload artifact
         uses: softprops/action-gh-release@v2
         with:
           files: YouTrack-Status-Tools-${{ github.ref_name }}.zip
-          body_path: CHANGELOG.md
+          body_path: docs/release-${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
