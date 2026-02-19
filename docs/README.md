@@ -4,6 +4,7 @@
 
 | Релиз на GitHub | Файл |
 |-----------------|------|
+| v1.1.6 | [release-v1.1.6.md](release-v1.1.6.md) |
 | v1.1.5 | [release-v1.1.5.md](release-v1.1.5.md) |
 | v1.1.4 | [release-v1.1.4.md](release-v1.1.4.md) |
 | v1.1.3 | [release-v1.1.3.md](release-v1.1.3.md) |
