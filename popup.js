@@ -454,7 +454,7 @@ function parseTaskList(text) {
     const normalizeDashes = (s) => String(s).replace(/[\u2010-\u2014\u2212–—−]/g, '-');
     const idRegex = /([A-Za-z]+)-(\d+)/gi;
     const tasks = [];
-    const lines = text.split(/[\n,;]+/);
+    const lines = text.split('\n');
     let linesWithNoId = 0;
 
     for (const line of lines) {
