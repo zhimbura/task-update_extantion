@@ -38,10 +38,23 @@ jobs:
             exit 1
           fi
 
+      - name: List release files (zip + скриншоты из store-screenshots, если есть)
+        id: release_files
+        run: |
+          echo "YouTrack-Status-Tools-${{ github.ref_name }}.zip" > release-files.txt
+          for f in store-screenshots/yt-status-tools-main.png store-screenshots/yt-status-tools-settings.png store-screenshots/yt-status-tools-results.png; do
+            [ -f "$f" ] && echo "$f" >> release-files.txt
+          done
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat release-files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Including:"
+          cat release-files.txt
+
       - name: Create Release and upload artifact
         uses: softprops/action-gh-release@v2
         with:
-          files: YouTrack-Status-Tools-${{ github.ref_name }}.zip
+          files: ${{ steps.release_files.outputs.files }}
           body_path: docs/release-${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

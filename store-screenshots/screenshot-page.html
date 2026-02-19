@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Status Tools — скриншоты для Chrome Web Store</title>
+    <style>
+        /* Стили расширения (копия для автономной работы) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .container { padding: 20px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        h2 { color: #333; font-size: 18px; border-bottom: 2px solid #4285f4; padding-bottom: 10px; margin: 0; }
+        .header-with-settings { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #4285f4; padding-bottom: 10px; }
+        .settings-button { background: none; border: none; font-size: 20px; cursor: pointer; padding: 5px 10px; border-radius: 4px; }
+        .view-section { width: 100%; }
+        h3 { color: #555; margin: 15px 0 10px 0; font-size: 14px; }
+        .section { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #555; font-size: 13px; font-weight: 500; }
+        input[type="text"], input[type="password"], textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical; }
+        .hint { display: block; margin-top: 5px; color: #666; font-size: 11px; font-style: italic; }
+        .button-group { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { flex: 1; padding: 10px 15px; border: none; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; }
+        .btn-primary { background-color: #4285f4; color: white; }
+        .btn-success { background-color: #34a853; color: white; }
+        .btn-danger { background-color: #ea4335; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        .btn-small { padding: 5px 10px; font-size: 11px; border-radius: 3px; }
+        .table-columns-list .column-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .table-columns-list .column-row .col-visible-wrap { flex-shrink: 0; }
+        .table-columns-list .column-row .col-field, .table-columns-list .column-row .col-label { flex: 1; min-width: 80px; }
+        .table-columns-list .column-row .btn-remove-col { flex-shrink: 0; padding: 6px 10px; background: #ea4335; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .results-section { margin-top: 20px; padding: 15px; background: white; border-radius: 4px; border: 1px solid #ddd; }
+        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .results-header h3 { margin: 0; font-size: 14px; color: #555; }
+        .results-table-container { border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; }
+        .results-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+        .results-table thead { background-color: #f5f5f5; }
+        .results-table th { padding: 10px; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #ddd; }
+        .results-table td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+        .results-table tbody tr:nth-child(even) { background-color: #fafafa; }
+        .results-table tbody tr:nth-child(odd) { background-color: #fff; }
+        .results-table .status { color: #555; font-weight: 500; }
+        .results-table .task-id { font-weight: 600; color: #333; }
+        .results-table .summary { color: #666; font-size: 12px; max-width: 300px; word-wrap: break-word; }
+        .results-table th .th-wrap { display: flex; align-items: center; gap: 6px; }
+        .results-table th .btn-copy-col { padding: 2px 6px; font-size: 11px; border: none; border-radius: 3px; background: #e0e0e0; cursor: pointer; }
+    </style>
+    <style>
+        /* Контейнер для скриншота 1280×800 (рекомендованный размер Chrome Web Store) */
+        .screenshot-frame {
+            width: 1280px;
+            height: 800px;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            overflow: visible;
+        }
+        /* Сплошная подложка на весь кадр — убирает серую полоску внизу */
+        .screenshot-frame .frame-bg-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1280px;
+            height: 800px;
+            background: #f5f5f5;
+            z-index: 0;
+        }
+        /* Карточка 780px с тенью — тень ложится на нижние 20px, но под ней тот же #f5f5f5 */
+        .screenshot-frame .frame-bg {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1280px;
+            height: 780px;
+            background: #f5f5f5;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 0;
+        }
+        /* Попап расширения по центру кадра — целые пиксели, без дробных */
+        .screenshot-frame .popup-wrap {
+            position: relative;
+            z-index: 1;
+            width: 700px;
+            min-height: 560px;
+            max-height: 760px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            overflow: hidden;
+            /* Меньший blur — html2canvas лучше рендерит, тень не «плывёт» */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        /* Контейнер для захвата: с запасом под тень кадра, потом обрезка до 1280×800 */
+        #capture-container {
+            position: fixed;
+            left: -99999px;
+            top: 0;
+            width: 1320px;
+            height: 840px;
+            overflow: visible;
+            z-index: -1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f5f5f5;
+        }
+        #capture-container .screenshot-frame {
+            margin: 0;
+            /* Тень кадра сохраняем — явный цвет для стабильного рендера */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        /* Подпись под кадром */
+        .caption {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+        body {
+            background: #e8e8e8;
+            padding: 24px 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 24px;
+            font-size: 18px;
+            color: #333;
+        }
+        .scene-nav {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .scene-nav button {
+            margin: 0 6px;
+            padding: 8px 16px;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .scene-nav button:hover { background: #357ae8; }
+        .scene-nav button.active { background: #1a73e8; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .download-nav { text-align: center; margin-bottom: 16px; }
+        .download-nav button { margin: 0 6px; padding: 10px 20px; background: #34a853; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .download-nav button:hover { background: #2d8f47; }
+        .download-nav button:disabled { background: #ccc; cursor: wait; }
+    </style>
+</head>
+<body>
+    <h1>Скриншоты для Chrome Web Store (1280×800)</h1>
+    <div class="scene-nav">
+        <button type="button" data-scene="main" class="active">Главный экран</button>
+        <button type="button" data-scene="settings">Настройки</button>
+        <button type="button" data-scene="results">Результаты</button>
+    </div>
+    <div class="download-nav">
+        <button type="button" id="downloadCurrent">Скачать текущий (PNG)</button>
+        <button type="button" id="downloadAll">Скачать все 3 скриншота</button>
+    </div>
+
+    <div id="capture-container"></div>
+
+    <!-- Сцена 1: Главный экран -->
+    <div id="scene-main" class="screenshot-frame" data-scene="main">
+        <div class="frame-bg-fill" aria-hidden="true"></div>
+        <div class="frame-bg" aria-hidden="true"></div>
+        <div class="popup-wrap">
+            <div class="container" style="padding: 20px; min-height: 560px;">
+                <div class="header-with-settings">
+                    <h2>YT Status Tools</h2>
+                    <button class="settings-button" title="Настройки">⚙️</button>
+                </div>
+                <div class="view-section">
+                    <div class="section">
+                        <label for="taskListDemo">Список задач (по одной на строку или через запятую):</label>
+                        <textarea id="taskListDemo" rows="8" readonly>ITSFT-101
+ITSFT-102
+ITSFT-103
+ITSFT-104
+ITSFT-105</textarea>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-success">Получить статусы</button>
+                        <button class="btn btn-danger">Очистить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сцена 2: Настройки -->
+    <div id="scene-settings" class="screenshot-frame" style="display: none;" data-scene="settings">
+        <div class="frame-bg-fill" aria-hidden="true"></div>
+        <div class="frame-bg" aria-hidden="true"></div>
+        <div class="popup-wrap">
+            <div class="container" style="padding: 20px; min-height: 560px;">
+                <div class="header-with-settings">
+                    <h2>YT Status Tools</h2>
+                    <button class="settings-button" title="Настройки">⚙️</button>
+                </div>
+                <div class="view-section">
+                    <h3>Настройки подключения</h3>
+                    <div class="section">
+                        <label for="hostDemo">YouTrack Host:</label>
+                        <input type="text" id="hostDemo" readonly value="https://your-company.youtrack.cloud">
+                    </div>
+                    <div class="section">
+                        <label for="tokenDemo">YouTrack Token:</label>
+                        <input type="password" id="tokenDemo" readonly value="perm_xxxxxxxxxxxxxxxxxxxxxxxx">
+                    </div>
+                    <h3 style="margin-top: 20px;">Колонки таблицы результатов</h3>
+                    <p class="hint">Укажите поля YouTrack для колонок. Доступны: <code>id</code>, <code>summary</code>, <code>project</code>, либо имя кастомного поля из API.</p>
+                    <div class="table-columns-list">
+                        <div class="column-row">
+                            <label class="col-visible-wrap"><input type="checkbox" class="col-visible" checked></label>
+                            <input type="text" class="col-field" value="Stage" readonly>
+                            <input type="text" class="col-label" value="Статус" readonly>
+                            <button type="button" class="btn-remove-col">✕</button>
+                        </div>
+                        <div class="column-row">
+                            <label class="col-visible-wrap"><input type="checkbox" class="col-visible" checked></label>
+                            <input type="text" class="col-field" value="id" readonly>
+                            <input type="text" class="col-label" value="Задача" readonly>
+                            <button type="button" class="btn-remove-col">✕</button>
+                        </div>
+                        <div class="column-row">
+                            <label class="col-visible-wrap"><input type="checkbox" class="col-visible" checked></label>
+                            <input type="text" class="col-field" value="summary" readonly>
+                            <input type="text" class="col-label" value="Описание" readonly>
+                            <button type="button" class="btn-remove-col">✕</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-small" style="margin-top: 8px;">+ Добавить колонку</button>
+                    <div class="button-group" style="margin-top: 20px;">
+                        <button class="btn btn-primary">Сохранить настройки</button>
+                        <button class="btn btn-secondary">Назад</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сцена 3: Результаты с таблицей -->
+    <div id="scene-results" class="screenshot-frame" style="display: none;" data-scene="results">
+        <div class="frame-bg-fill" aria-hidden="true"></div>
+        <div class="frame-bg" aria-hidden="true"></div>
+        <div class="popup-wrap">
+            <div class="container" style="padding: 20px; min-height: 560px;">
+                <div class="header-with-settings">
+                    <h2>YT Status Tools</h2>
+                    <button class="settings-button" title="Настройки">⚙️</button>
+                </div>
+                <div class="view-section">
+                    <div class="section">
+                        <label>Список задач:</label>
+                        <textarea rows="2" readonly style="resize: none;">ITSFT-101, ITSFT-102, ITSFT-103</textarea>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-success">Получить статусы</button>
+                        <button class="btn btn-danger">Очистить</button>
+                    </div>
+                </div>
+                <div id="resultsSection" class="results-section" style="display: block; margin-top: 20px;">
+                    <div class="results-header">
+                        <h3>Результаты:</h3>
+                        <div class="results-buttons">
+                            <button class="btn btn-primary btn-small">📋 Копировать таблицу</button>
+                        </div>
+                    </div>
+                    <div class="results-table-container">
+                        <table class="results-table">
+                            <thead>
+                                <tr>
+                                    <th><span class="th-wrap"><span>Статус</span><button type="button" class="btn-copy-col">📋</button></span></th>
+                                    <th><span class="th-wrap"><span>Задача</span><button type="button" class="btn-copy-col">📋</button></span></th>
+                                    <th><span class="th-wrap"><span>Описание</span><button type="button" class="btn-copy-col">📋</button></span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="status">In Progress</td>
+                                    <td class="task-id">ITSFT-101</td>
+                                    <td class="summary">Пример описания задачи для скриншота</td>
+                                </tr>
+                                <tr>
+                                    <td class="status">Done</td>
+                                    <td class="task-id">ITSFT-102</td>
+                                    <td class="summary">Вторая задача с описанием</td>
+                                </tr>
+                                <tr>
+                                    <td class="status">To Do</td>
+                                    <td class="task-id">ITSFT-103</td>
+                                    <td class="summary">Третья задача в списке</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <p class="caption">Выберите сцену и нажмите «Скачать текущий» или «Скачать все 3 скриншота» — файлы PNG 1280×800 сохранятся на диск.</p>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script>
+        const sceneIds = ['main', 'settings', 'results'];
+        const sceneLabels = { main: 'main', settings: 'settings', results: 'results' };
+
+        document.querySelectorAll('.scene-nav button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const scene = btn.getAttribute('data-scene');
+                document.querySelectorAll('.screenshot-frame').forEach(f => f.style.display = 'none');
+                document.querySelectorAll('.scene-nav button').forEach(b => b.classList.remove('active'));
+                const frame = document.getElementById('scene-' + scene);
+                if (frame) { frame.style.display = 'flex'; btn.classList.add('active'); }
+            });
+        });
+
+        function getVisibleFrame() {
+            return document.querySelector('.screenshot-frame[style*="flex"]') || document.getElementById('scene-main');
+        }
+
+        function getCurrentSceneId() {
+            const frame = getVisibleFrame();
+            return frame ? frame.getAttribute('data-scene') : 'main';
+        }
+
+        function captureAndDownload(frame, filename) {
+            const s = frame.style;
+            const save = {
+                position: s.position,
+                top: s.top,
+                left: s.left,
+                margin: s.margin,
+                overflow: s.overflow,
+                zIndex: s.zIndex
+            };
+            frame.style.position = 'fixed';
+            frame.style.top = '0';
+            frame.style.left = '0';
+            frame.style.margin = '0';
+            frame.style.overflow = 'hidden';
+            frame.style.zIndex = '99999';
+
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))).then(() =>
+                html2canvas(frame, {
+                    scale: 1,
+                    width: 1280,
+                    height: 800,
+                    windowWidth: 1280,
+                    windowHeight: 800,
+                    useCORS: true,
+                    logging: false,
+                    scrollX: 0,
+                    scrollY: 0
+                })
+            ).then(canvas => {
+                const ctx = canvas.getContext('2d');
+                const stripHeight = 20;
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(0, canvas.height - stripHeight, canvas.width, stripHeight);
+                return new Promise((resolve) => {
+                    canvas.toBlob(blob => {
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = filename || 'screenshot.png';
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                        resolve();
+                    }, 'image/png', 1);
+                });
+            }).finally(() => {
+                s.position = save.position;
+                s.top = save.top;
+                s.left = save.left;
+                s.margin = save.margin;
+                s.overflow = save.overflow;
+                s.zIndex = save.zIndex;
+            });
+        }
+
+        document.getElementById('downloadCurrent').addEventListener('click', () => {
+            const frame = getVisibleFrame();
+            const scene = getCurrentSceneId();
+            const btn = document.getElementById('downloadCurrent');
+            btn.disabled = true;
+            captureAndDownload(frame, 'yt-status-tools-' + scene + '.png')
+                .then(() => { btn.disabled = false; })
+                .catch(() => { btn.disabled = false; });
+        });
+
+        document.getElementById('downloadAll').addEventListener('click', async () => {
+            const allBtn = document.getElementById('downloadAll');
+            const navButtons = document.querySelectorAll('.scene-nav button');
+            allBtn.disabled = true;
+            for (let i = 0; i < sceneIds.length; i++) {
+                const scene = sceneIds[i];
+                navButtons[i].click();
+                await new Promise(r => setTimeout(r, 300));
+                const frame = document.getElementById('scene-' + scene);
+                await captureAndDownload(frame, 'yt-status-tools-' + sceneLabels[scene] + '.png');
+                await new Promise(r => setTimeout(r, 400));
+            }
+            allBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
